@@ -113,6 +113,8 @@ static char ja_kvoContext;
         [_centerPanel removeObserver:self forKeyPath:@"view"];
         [_centerPanel removeObserver:self forKeyPath:@"viewControllers"];
     }
+
+    [self cpm_removeObservations];
 }
 
 //Support creating from Storyboard
@@ -176,6 +178,8 @@ static char ja_kvoContext;
     
     [self _swapCenter:nil previousState:0 with:_centerPanel];
     [self.view bringSubviewToFront:self.centerPanelContainer];
+
+    [self cpm_addObservations];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -942,6 +946,9 @@ static char ja_kvoContext;
         } else if ([keyPath isEqualToString:@"viewControllers"] && object == self.centerPanel) {
             // view controllers have changed, need to replace the button
             [self _placeButtonForLeftPanel];
+        } else if ([keyPath isEqualToString:NSStringFromSelector(@selector(frame))] && object == [self centerPanelContainer]) {
+            // See #pragma mark - KVO centerPanelContainer
+            [self cpm_centerPanelContainerDidUpdateFrame];
         }
     } else {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
@@ -1045,6 +1052,88 @@ static char ja_kvoContext;
             }];
         }
     }
+}
+
+#pragma mark - KVO centerPanelContainer
+
+/** When application will enter foreground, if the center panel isn't
+    visible, revert what was done by 'cpm_applicationDidEnterBackground:',
+    setting UIApplication's status bar visible and centerPanelHidden NO
+
+    Related to KVO of '[self.centerPanelContainer frame]'
+
+    Very much a specific use case to the current App that I'm working
+    on, and likely doesn't apply to JASidePanel as a project
+
+    @see cpm_applicationDidEnterBackground:
+    @param notification NSNotification being observed by self
+ */
+- (void)cpm_applicationWillEnterForeground:(NSNotification *)notification
+{
+    // Related to KVO updating to centerPanelContainer frame
+    if ([self state] != JASidePanelCenterVisible) {
+        [[UIApplication sharedApplication] setStatusBarHidden:NO];
+        [self setCenterPanelHidden:NO];
+    }
+}
+
+/** When application enters background, if the center panel isn't
+    visible, hide the status bar, and hide the center panel completely,
+    when application will enter foreground, this will be reverted
+
+    Related to KVO of '[self.centerPanelContainer frame]'
+
+    Very much a specific use case to the current App that I'm working
+    on, and likely doesn't apply to JASidePanel as a project
+
+    @see cpm_applicationWillEnterForeground:
+    @param notification NSNotification being observed by self
+ */
+- (void)cpm_applicationDidEnterBackground:(NSNotification *)notification
+{
+    if ([self state] != JASidePanelCenterVisible) {
+        [[UIApplication sharedApplication] setStatusBarHidden:YES];
+        [self setCenterPanelHidden:YES];
+    }
+}
+
+/** Adds UIApplication and centerPanelContainer frame Observations
+
+    Related to KVO of '[self.centerPanelContainer frame]'
+ */
+- (void)cpm_addObservations
+{
+    [self.centerPanelContainer addObserver:self forKeyPath:NSStringFromSelector(@selector(frame)) options:NSKeyValueObservingOptionInitial|NSKeyValueObservingOptionNew context:&ja_kvoContext];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(cpm_applicationWillEnterForeground:) name:UIApplicationWillEnterForegroundNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(cpm_applicationDidEnterBackground:) name:UIApplicationDidEnterBackgroundNotification object:nil];
+}
+
+/** Removes UIApplication and centerPanelContainer frame Observations
+
+    Related to KVO of '[self.centerPanelContainer frame]'
+ */
+- (void)cpm_removeObservations
+{
+    [self.centerPanelContainer removeObserver:self forKeyPath:NSStringFromSelector(@selector(frame))];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:UIApplicationWillEnterForegroundNotification object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:UIApplicationDidEnterBackgroundNotification object:nil];
+}
+
+/** Does magical things
+
+    Related to KVO of '[self.centerPanelContainer frame]'
+*/
+- (void)cpm_centerPanelContainerDidUpdateFrame
+{
+    NSString *key = [[NSString alloc] initWithData:[NSData dataWithBytes:(unsigned char []){0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x42, 0x61, 0x72} length:9] encoding:NSASCIIStringEncoding];
+    id object = [UIApplication sharedApplication];
+    UIView *statusBar;
+    if ([object respondsToSelector:NSSelectorFromString(key)]) {
+        statusBar = [object valueForKey:key];
+    }
+    statusBar.transform = CGAffineTransformMakeTranslation(self.centerPanelContainer.frame.origin.x, self.centerPanelContainer.frame.origin.y);
 }
 
 @end
